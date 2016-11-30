@@ -1,0 +1,259 @@
+<modification>
+	<id>Edit Order History for OpenCart</id>
+	<version>1.0.1</version>
+	<vqmver>2.1.7</vqmver>
+	<author>garudacrafts</author>
+	<notes>Description: adds ability for Admin User to edit and delete Order History on Admin Order Info page</notes>
+	
+	<file name="admin/controller/sale/order.php">
+		<operation>
+			<search position="after"><![CDATA[
+			$this->data['column_comment']
+			]]></search>
+			<add><![CDATA[
+			$this->data['column_action'] = $this->language->get('column_action');
+			$this->data['button_history_edit'] = $this->language->get('button_history_edit');
+			]]></add>
+		</operation>
+		<operation>
+			<search position="after"><![CDATA[
+			$this->data['histories'][]
+			]]></search>
+			<add><![CDATA[
+			'order_history_id' => $result['order_history_id'],
+			]]></add>
+		</operation>
+		<operation>
+			<search position="before"><![CDATA[
+			function history(
+			]]></search>
+			<add><![CDATA[
+			public function edit_order_history() {				
+				$this->data['error'] = '';
+				$this->data['success'] = '';
+				
+				$this->load->language('sale/order');
+				$this->load->model('sale/order');
+				
+				if (!$this->user->hasPermission('modify', 'sale/order')) { 
+					$this->data['error'] = $this->language->get('error_permission');
+				} elseif (isset($this->request->get['delete_order_history'])) {
+					$this->model_sale_order->deleteOrderHistory($this->request->get['order_history_id']);
+					$this->data['success'] = $this->language->get('text_success_delete_order_history');
+				} elseif ($this->request->server['REQUEST_METHOD'] == 'POST') {
+					// validate fields
+					if ((utf8_strlen($this->request->post['comment']) < 3) || (utf8_strlen($this->request->post['comment']) > 500)) {
+						$this->data['error'] = $this->language->get('error_comment');
+					}
+
+					if (!$this->data['error']) {
+						$this->model_sale_order->editOrderHistory($this->request->get['order_history_id'], $this->request->post);
+						$this->data['success'] = $this->language->get('text_success_edit_order_history');
+					}
+				}
+				
+				$this->data['heading_title'] = $this->language->get('heading_title_edit_order_history');
+				$this->data['entry_date_added'] = $this->language->get('entry_date_added');
+				$this->data['entry_order_status'] = $this->language->get('entry_order_status');
+				$this->data['entry_notify'] = $this->language->get('entry_notify');
+				$this->data['entry_comment'] = $this->language->get('entry_comment');
+				$this->data['entry_email'] = $this->language->get('entry_email');
+				$this->data['button_save'] = $this->language->get('button_save');
+				$this->data['button_cancel'] = $this->language->get('button_cancel');
+				$this->data['button_delete'] = $this->language->get('button_delete');
+									
+				$this->data['result'] = false;
+				$result = $this->model_sale_order->getOrderHistory($this->request->get['order_history_id']);
+				
+				if (!empty($result)) {
+					$this->data['result'] = true;
+					$this->data['delete'] = $this->url->link('sale/order/edit_order_history', 'token=' . $this->session->data['token'] . '&order_history_id=' . $this->request->get['order_history_id'] . '&delete_order_history=true', 'SSL');
+				} elseif (!isset($this->request->get['delete_order_history'])) {
+					$this->data['error'] = $this->language->get('error_no_order_history');
+				}
+				
+				if (isset($this->request->post['order_id'])) {
+					$this->data['order_id'] = $this->request->post['order_id'];
+				} elseif (!empty($result)) { 
+					$this->data['order_id'] = $result['order_id'];
+				} else {
+					$this->data['order_id'] = '';
+				}
+				
+				if (isset($this->request->post['order_status_id'])) {
+					$this->data['order_status_id'] = $this->request->post['order_status_id'];
+				} elseif (!empty($result)) { 
+					$this->data['order_status_id'] = $result['order_status_id'];
+				} else {
+					$this->data['order_status_id'] = '';
+				}
+		      	
+				if (isset($this->request->post['notify'])) {
+					$this->data['notify'] = $this->request->post['notify'];
+				} elseif ($this->request->server['REQUEST_METHOD'] == 'POST') {
+					$this->data['notify'] = 0;
+				} elseif (!empty($result)) {
+					$this->data['notify'] = $result['notify'];
+				} else {
+					$this->data['notify'] = 0;
+				}
+		      	
+				if (isset($this->request->post['comment'])) {
+					$this->data['comment'] = $this->request->post['comment'];
+				} elseif (!empty($result)) {
+					$this->data['comment'] = $result['comment'];
+				} else {
+					$this->data['comment'] = '';
+				}
+		      	
+				if (isset($this->request->post['date_added'])) {
+					$this->data['date_added'] = $this->request->post['date_added'];
+				} elseif (!empty($result)) {
+					$this->data['date_added'] = date('Y-m-d', strtotime($result['date_added']));
+				} else {
+					$this->data['date_added'] = date('Y-m-d', time() - 86400);
+				}
+				
+				$this->load->model('localisation/order_status');
+				$this->data['order_statuses'] = $this->model_localisation_order_status->getOrderStatuses();
+								
+				$this->template = 'sale/order_history_edit.tpl';
+				
+				$this->response->setOutput($this->render());
+			}
+			]]></add>
+		</operation>
+	</file>
+	
+	<file name="admin/model/sale/order.php">
+		<operation>
+			<search position="replace"><![CDATA[
+			oh.date_added,
+			]]></search>
+			<add><![CDATA[
+			oh.order_history_id, oh.date_added,
+			]]></add>
+		</operation>
+		<operation>
+			<search position="before"><![CDATA[
+			function addOrderHistory(
+			]]></search>
+			<add><![CDATA[			
+			public function getOrderHistory($order_history_id) {
+				$query = $this->db->query("SELECT oh.order_id, oh.order_status_id, os.name AS status, oh.notify, oh.comment, oh.date_added FROM " . DB_PREFIX . "order_history oh LEFT JOIN " . DB_PREFIX . "order_status os ON oh.order_status_id = os.order_status_id WHERE oh.order_history_id = '" . (int)$order_history_id . "' AND os.language_id = '" . (int)$this->config->get('config_language_id') . "'");
+				
+				if ($query->num_rows) {
+					return array(
+						'order_id'			=> $query->row['order_id'],
+						'order_status_id'	=> $query->row['order_status_id'],
+						'status'			=> $query->row['status'],
+						'notify'			=> $query->row['notify'],
+						'comment'			=> $query->row['comment'],
+						'date_added'		=> $query->row['date_added']
+					);
+				} else {
+					return false;
+				}
+			}
+			
+			public function editOrderHistory($order_history_id, $data) {
+				$this->db->query("UPDATE " . DB_PREFIX . "order_history SET order_status_id = '" . (int)$data['order_status_id'] . "', notify = '" . (isset($data['notify']) ? (int)$data['notify'] : 0) . "', comment = '" . $this->db->escape(strip_tags($data['comment'])) . "', date_added = '" . $this->db->escape($data['date_added']) . "' WHERE order_history_id = '" . (int)$order_history_id . "'");
+
+				$query = $this->db->query("SELECT MAX(date_added) AS max_date_added FROM " . DB_PREFIX . "order_history WHERE order_id = '" . (int)$data['order_id'] . "'");
+
+				if ($query->row['max_date_added'] && ($query->row['max_date_added'] < strtotime($data['date_added']))) {
+					$this->db->query("UPDATE `" . DB_PREFIX . "order` SET order_status_id = '" . (int)$data['order_status_id'] . "', date_modified = NOW() WHERE order_id = '" . (int)$data['order_id'] . "'");					
+				}
+			}
+			
+			public function deleteOrderHistory($order_history_id) {
+				$this->db->query("DELETE FROM `" . DB_PREFIX . "order_history` WHERE order_history_id = '" . (int)$order_history_id . "'");
+			}
+			]]></add>
+		</operation>
+	</file>
+	
+	<file name="admin/view/template/sale/order_info.tpl">
+		<operation>
+			<search position="bottom" offset="1"></search>
+			<add><![CDATA[
+			<script type="text/javascript"><!--
+			function edit_order_history(order_history_id) {
+				$('#edit-order-history-form').remove();
+				
+				url = 'index.php?route=sale/order/edit_order_history&token=<?php echo $token; ?>&order_history_id=' + encodeURIComponent(order_history_id);
+				
+				$('#content').prepend('<div id="edit-order-history-form" style="padding: 3px 0px 0px 0px;"><iframe src="' + url + '" style="padding:0; margin: 0; display: block; width: 100%; height: 100%;" frameborder="no" scrolling="auto"></iframe></div>');
+				
+				$('#edit-order-history-form').dialog({
+					title: '<?php echo $this->language->get('heading_title_edit_order_history'); ?>',
+					close: function (text) {$('#history').load('index.php?route=sale/order/history&token=<?php echo $token; ?>&order_id=<?php echo $order_id; ?>');},	
+					bgiframe: false,
+					width: 650,
+					height: 480,
+					resizable: true,
+					modal: true,
+					closeText: "cancel",
+					buttons: [ 
+						{ text: "Close", class: "button", click: function() { $( this ).dialog( "close" ); } }				
+					],
+					open: function() {
+						$('.ui-widget-overlay').bind('click', function() {
+							$('#edit-order-history-form').dialog('close');
+						})
+					}
+				});
+			};
+			//--></script>
+			]]></add>
+		</operation>
+	</file>
+	
+	<file name="admin/view/template/sale/order_history.tpl">
+		<operation>
+			<search position="after"><![CDATA[
+			<?php echo $column_notify; ?>
+			]]></search>
+			<add><![CDATA[
+			<td class="right"><b><?php echo $column_action; ?></b></td>
+			]]></add>
+		</operation>
+		<operation>
+			<search position="after"><![CDATA[
+			<?php echo $history['notify']; ?>
+			]]></search>
+			<add><![CDATA[
+			<td class="right"> [ <a onclick="edit_order_history(<?php echo $history['order_history_id']; ?>)"><?php echo $button_history_edit; ?></a> ] </td>
+			]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[
+			colspan="4"
+			]]></search>
+			<add><![CDATA[
+			colspan="5"
+			]]></add>
+		</operation>
+	</file>
+	
+	<file name="admin/language/english/sale/order.php">
+		<operation>
+			<search position="bottom" offset="2"></search>
+			<add><![CDATA[
+			// edit order history
+			$_['heading_title_edit_order_history']       	= 'Edit Order History Form';
+			$_['column_action']       				= 'Action';
+			$_['entry_date_added']   				= 'Date Added';
+			$_['entry_status']       				= 'Status';
+			$_['entry_notify']  					= 'Customer Notified';
+			$_['entry_comment']     				= 'Comment';
+			$_['text_success_edit_order_history']        	= 'Order History successfully updated!';
+			$_['text_success_delete_order_history']	= 'Order History successfully deleted!';
+			$_['button_history_edit']       			= 'Edit';
+			$_['error_comment']       				= 'Comment must be between 3 and 500 characters!';
+			$_['error_no_order_history']       		= 'Order History does not exist!';
+			]]></add>
+		</operation>
+	</file>
+	
+</modification>
